@@ -1,0 +1,559 @@
+import { useState, useRef, useEffect, useMemo } from "react";
+
+const C={bg:"#06070A",s1:"rgba(18,20,28,.85)",s2:"rgba(30,33,44,.9)",sep:"rgba(255,255,255,.08)",soft:"rgba(255,255,255,.05)",t1:"#F5F7FC",t2:"rgba(245,247,252,.5)",t3:"rgba(245,247,252,.26)",t4:"rgba(255,255,255,.07)",blue:"#3B82F6",cyan:"#22D3EE",green:"#34D399",orange:"#FB923C",red:"#F87171",purple:"#A78BFA",violet:"#8B5CF6",gold:"#FBBF24",pink:"#F472B6"};
+const FONT="-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Helvetica Neue',system-ui,sans-serif";
+const MONO="'SF Mono','JetBrains Mono',ui-monospace,monospace";
+
+// ════ PROVIDER SWITCHER ════
+// Im Artifact läuft nur Claude (Anthropic). Die Gemini/OpenAI-Pfade sind vorbereitet
+// für den Eigenbetrieb mit eigenem API-Key (auf Vercel/lokal).
+const PROVIDERS={
+  claude:{name:"Claude",sub:"Anthropic · läuft hier",color:C.violet,model:"claude-sonnet-4-20250514",live:true},
+  gemini:{name:"Gemini",sub:"Google · gratis Kontingent",color:C.blue,model:"gemini-1.5-flash",live:false},
+  openai:{name:"ChatGPT",sub:"OpenAI · Pay-as-you-go",color:C.green,model:"gpt-4o-mini",live:false},
+};
+
+// ─── BRAIN NODES ─────────────────────────────────────────────────────────────
+const BNODES={oracle:{x:220,y:62,lbl:"Oracle",em:"◉"},market:{x:220,y:150,lbl:"Markt",em:"◭"},builder:{x:102,y:78,lbl:"Builder",em:"◈"},innovator:{x:338,y:78,lbl:"Innovator",em:"✦"},investor:{x:84,y:150,lbl:"Investor",em:"◆"},performer:{x:356,y:150,lbl:"Performer",em:"▲"},philosopher:{x:220,y:230,lbl:"Strategie",em:"∞"},techmind:{x:102,y:222,lbl:"TechMind",em:"⬡"},advisor:{x:338,y:222,lbl:"Advisor",em:"◐"}};
+const BEDGES=[["oracle","market"],["oracle","builder"],["oracle","innovator"],["oracle","investor"],["oracle","performer"],["market","investor"],["market","performer"],["market","philosopher"],["builder","investor"],["builder","techmind"],["innovator","performer"],["innovator","advisor"],["investor","techmind"],["investor","philosopher"],["performer","advisor"],["philosopher","techmind"],["philosopher","advisor"],["techmind","advisor"]];
+function qbPt(ax,ay,bx,by,t){const mx=(ax+bx)/2,my=(ay+by)/2,dx=bx-ax,dy=by-ay,l=Math.sqrt(dx*dx+dy*dy)||1,cx=mx-(dy/l)*24,cy=my+(dx/l)*24,mt=1-t;return{x:mt*mt*ax+2*mt*t*cx+t*t*bx,y:mt*mt*ay+2*mt*t*cy+t*t*by};}
+
+function BrainViz({agents,activeId,faceState}){
+  const cvRef=useRef(null),pRef=useRef(null),stRef=useRef(faceState),actRef=useRef(activeId),agRef=useRef(agents),tRef=useRef(0);
+  useEffect(()=>{stRef.current=faceState;},[faceState]);useEffect(()=>{actRef.current=activeId;},[activeId]);useEffect(()=>{agRef.current=agents;},[agents]);
+  useEffect(()=>{pRef.current=BEDGES.flatMap((e,i)=>Array.from({length:3},()=>({ei:i,t:Math.random(),spd:.0035+Math.random()*.0045})));},[]);
+  useEffect(()=>{
+    const cv=cvRef.current;if(!cv)return;const ctx=cv.getContext("2d");let last=0,raf;
+    const loop=(now)=>{
+      const dt=Math.min(now-last,50);last=now;tRef.current+=dt*.001;
+      const T=tRef.current,st=stRef.current,act=actRef.current,ags=agRef.current,W=cv.width,H=cv.height;
+      ctx.clearRect(0,0,W,H);ctx.save();ctx.scale(W/440,H/300);
+      const acc=id=>ags.find(a=>a.id===id)?.accent||C.blue,boost=st!=="idle"?2.6:1;
+      pRef.current.forEach(p=>{p.t+=p.spd*boost;if(p.t>1)p.t=0;});
+      [[148,150],[292,150]].forEach(([cx,cy])=>{const g=ctx.createRadialGradient(cx-16,cy-22,8,cx,cy,128);g.addColorStop(0,"rgba(26,30,42,.9)");g.addColorStop(1,"rgba(8,9,14,.95)");ctx.beginPath();ctx.ellipse(cx,cy,122,116,0,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();ctx.strokeStyle="rgba(255,255,255,.05)";ctx.lineWidth=1;ctx.stroke();});
+      for(let y=36;y<264;y+=9){ctx.beginPath();ctx.arc(220,y,1.2,0,Math.PI*2);ctx.fillStyle=`rgba(0,0,0,${.08+.04*Math.sin(y*.12+T)})`;ctx.fill();}
+      [[78,106,148,90,202,110],[78,190,148,208,202,190],[238,110,292,90,362,106],[238,190,292,208,362,190],[92,150,148,138,184,150],[256,150,292,138,348,150]].forEach(p=>{ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.quadraticCurveTo(p[2],p[3],p[4],p[5]);ctx.strokeStyle="rgba(255,255,255,.04)";ctx.lineWidth=1;ctx.stroke();});
+      BEDGES.forEach(([a,b])=>{const na=BNODES[a],nb=BNODES[b];if(!na||!nb)return;const on=act===a||act===b;ctx.beginPath();ctx.moveTo(na.x,na.y);const mx=(na.x+nb.x)/2,my=(na.y+nb.y)/2,dx=nb.x-na.x,dy=nb.y-na.y,l=Math.sqrt(dx*dx+dy*dy)||1;ctx.quadraticCurveTo(mx-(dy/l)*24,my+(dx/l)*24,nb.x,nb.y);ctx.strokeStyle=on?acc(act)+"55":"rgba(255,255,255,.07)";ctx.lineWidth=on?1.6:.7;ctx.stroke();});
+      pRef.current.forEach(p=>{const [a,b]=BEDGES[p.ei],na=BNODES[a],nb=BNODES[b];if(!na||!nb)return;const pos=qbPt(na.x,na.y,nb.x,nb.y,p.t),on=act===a||act===b,col=on?acc(act):"#5B8DEF",r=on?3:1.6;const g=ctx.createRadialGradient(pos.x,pos.y,0,pos.x,pos.y,r*3.5);g.addColorStop(0,col);g.addColorStop(.5,col+"77");g.addColorStop(1,col+"00");ctx.beginPath();ctx.arc(pos.x,pos.y,r*3.5,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();ctx.beginPath();ctx.arc(pos.x,pos.y,r,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();});
+      Object.entries(BNODES).forEach(([id,nd])=>{const a=acc(id),on=act===id,pulse=.5+.5*Math.sin(T*(on?3.5:1.2)),gR=on?34:20,gO=on?.5+.18*pulse:.1+.06*pulse;const g=ctx.createRadialGradient(nd.x,nd.y,0,nd.x,nd.y,gR);g.addColorStop(0,a+Math.round(gO*255).toString(16).padStart(2,"0"));g.addColorStop(1,a+"00");ctx.beginPath();ctx.arc(nd.x,nd.y,gR,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();const nr=on?15:10,ng=ctx.createRadialGradient(nd.x-nr*.3,nd.y-nr*.3,0,nd.x,nd.y,nr);ng.addColorStop(0,a+"EE");ng.addColorStop(1,a+(on?"99":"55"));ctx.beginPath();ctx.arc(nd.x,nd.y,nr,0,Math.PI*2);ctx.fillStyle=ng;ctx.fill();ctx.strokeStyle=on?a:a+"88";ctx.lineWidth=on?1.6:1;ctx.stroke();ctx.font=`${on?13:10}px ${FONT}`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillStyle="rgba(255,255,255,.95)";ctx.fillText(nd.em,nd.x,nd.y);ctx.font=`${on?"700":"500"} ${on?8.5:7.5}px ${FONT}`;ctx.fillStyle=on?a:"rgba(255,255,255,.5)";ctx.fillText(nd.lbl,nd.x,nd.y+(on?24:19));});
+      ctx.restore();raf=requestAnimationFrame(loop);
+    };raf=requestAnimationFrame(loop);return()=>cancelAnimationFrame(raf);
+  },[]);
+  return <canvas ref={cvRef} width={440} height={300} style={{display:"block",width:"100%",aspectRatio:"440 / 300",height:"auto"}}/>;
+}
+
+// ─── ROBOT FACE ──────────────────────────────────────────────────────────────
+function drawFace(ctx,W,H,state,accent,a){
+  ctx.clearRect(0,0,W,H);ctx.save();ctx.scale(W/280,H/340);
+  const {blink:bl,px,py,glow:g,t}=a,cx=140;
+  if(state!=="idle"){const ag=ctx.createRadialGradient(cx,160,8,cx,160,200);ag.addColorStop(0,accent+"22");ag.addColorStop(1,"rgba(0,0,0,0)");ctx.beginPath();ctx.ellipse(cx,160,190,200,0,0,Math.PI*2);ctx.fillStyle=ag;ctx.fill();}
+  const hg=ctx.createRadialGradient(cx-20,108,12,cx,168,155);hg.addColorStop(0,"#FAFBFD");hg.addColorStop(.45,"#E8EAEF");hg.addColorStop(.82,"#CACDD6");hg.addColorStop(1,"#9DA1AE");ctx.beginPath();ctx.ellipse(cx,172,108,138,0,0,Math.PI*2);ctx.fillStyle=hg;ctx.fill();
+  const ed=ctx.createRadialGradient(cx,172,72,cx,172,136);ed.addColorStop(0,"rgba(0,0,0,0)");ed.addColorStop(1,"rgba(20,24,40,.25)");ctx.beginPath();ctx.ellipse(cx,172,108,138,0,0,Math.PI*2);ctx.fillStyle=ed;ctx.fill();
+  const fh=ctx.createRadialGradient(cx-12,100,0,cx,118,82);fh.addColorStop(0,"rgba(255,255,255,.65)");fh.addColorStop(1,"rgba(255,255,255,0)");ctx.beginPath();ctx.ellipse(cx-6,108,65,48,-.1,0,Math.PI*2);ctx.fillStyle=fh;ctx.fill();
+  ctx.beginPath();ctx.moveTo(52,150);ctx.lineTo(64,148);ctx.strokeStyle=accent+"40";ctx.lineWidth=1.5;ctx.stroke();ctx.beginPath();ctx.moveTo(228,150);ctx.lineTo(216,148);ctx.strokeStyle=accent+"40";ctx.lineWidth=1.5;ctx.stroke();
+  ctx.beginPath();ctx.moveTo(42,138);ctx.bezierCurveTo(88,116,192,116,238,138);ctx.bezierCurveTo(218,155,62,155,42,138);ctx.fillStyle="rgba(0,0,0,.08)";ctx.fill();
+  [[98,162],[182,162]].forEach(([ex,ey])=>{const sg=ctx.createRadialGradient(ex,ey+2,3,ex,ey+2,35);sg.addColorStop(0,"rgba(8,14,55,.7)");sg.addColorStop(.65,"rgba(4,8,32,.4)");sg.addColorStop(1,"rgba(0,0,4,0)");ctx.beginPath();ctx.ellipse(ex,ey,35,28,0,0,Math.PI*2);ctx.fillStyle=sg;ctx.fill();});
+  [[98,162],[182,162]].forEach(([ex,ey])=>{
+    const epx=ex+px,epy=ey+py,eRY=bl?1.5:18;
+    ctx.beginPath();ctx.ellipse(ex,ey,23,eRY,0,0,Math.PI*2);const sc=ctx.createRadialGradient(epx-3,epy-5,0,ex,ey,24);sc.addColorStop(0,"#F0F6FF");sc.addColorStop(.55,"#C4D4F0");sc.addColorStop(1,"#6484BC");ctx.fillStyle=sc;ctx.fill();
+    if(!bl&&eRY>4){const ic=accent;const hl=ctx.createRadialGradient(epx,epy,0,epx,epy,16);hl.addColorStop(0,ic+"88");hl.addColorStop(1,ic+"00");ctx.beginPath();ctx.arc(epx,epy,16,0,Math.PI*2);ctx.fillStyle=hl;ctx.fill();ctx.beginPath();ctx.arc(epx,epy,12,0,Math.PI*2);const ig=ctx.createRadialGradient(epx-2,epy-3,0,epx,epy,12);ig.addColorStop(0,"#D8ECFF");ig.addColorStop(.3,ic);ig.addColorStop(.7,ic+"CC");ig.addColorStop(1,"#001050");ctx.fillStyle=ig;ctx.fill();ctx.strokeStyle=ic+"55";ctx.lineWidth=1;ctx.stroke();ctx.beginPath();ctx.arc(epx,epy,5,0,Math.PI*2);ctx.fillStyle="#000814";ctx.fill();ctx.beginPath();ctx.arc(epx+4,epy-4.5,2.8,0,Math.PI*2);ctx.fillStyle="rgba(255,255,255,.92)";ctx.fill();ctx.beginPath();ctx.arc(epx+7,epy-7.5,1.3,0,Math.PI*2);ctx.fillStyle="rgba(255,255,255,.55)";ctx.fill();if(state!=="idle"){const gl=ctx.createRadialGradient(ex,ey,10,ex,ey,30);gl.addColorStop(0,ic+Math.round((.28+.22*g)*255).toString(16).padStart(2,"0"));gl.addColorStop(1,ic+"00");ctx.beginPath();ctx.arc(ex,ey,30,0,Math.PI*2);ctx.fillStyle=gl;ctx.fill();}}
+    ctx.beginPath();ctx.ellipse(ex,ey,23,Math.max(eRY,1.5),0,0,Math.PI*2);ctx.strokeStyle="rgba(40,60,110,.3)";ctx.lineWidth=1;ctx.stroke();
+  });
+  if(state==="thinking"||state==="routing"){const sl=ctx.createLinearGradient(58,0,222,0),op=(.22+.28*g).toFixed(2);sl.addColorStop(0,accent+"00");sl.addColorStop(.3,accent+Math.round(op*255).toString(16).padStart(2,"0"));sl.addColorStop(.7,accent+Math.round(op*255).toString(16).padStart(2,"0"));sl.addColorStop(1,accent+"00");ctx.beginPath();ctx.moveTo(58,162);ctx.lineTo(222,162);ctx.strokeStyle=sl;ctx.lineWidth=1.8;ctx.stroke();}
+  ctx.beginPath();ctx.moveTo(132,192);ctx.bezierCurveTo(128,212,128,234,136,244);ctx.strokeStyle="rgba(0,0,0,.07)";ctx.lineWidth=3.2;ctx.lineCap="round";ctx.stroke();
+  ctx.beginPath();ctx.ellipse(128,247,6,4.2,-.3,0,Math.PI*2);ctx.fillStyle="rgba(0,0,0,.05)";ctx.fill();ctx.beginPath();ctx.ellipse(150,247,6,4.2,.3,0,Math.PI*2);ctx.fillStyle="rgba(0,0,0,.05)";ctx.fill();
+  ctx.beginPath();ctx.moveTo(106,272);ctx.bezierCurveTo(120,280,160,280,174,272);ctx.strokeStyle="rgba(70,70,100,.4)";ctx.lineWidth=2.6;ctx.lineCap="round";ctx.stroke();
+  const barY=308;ctx.beginPath();if(ctx.roundRect)ctx.roundRect(48,barY,184,6,3);else ctx.rect(48,barY,184,6);ctx.fillStyle=accent+"14";ctx.fill();
+  if(state==="speaking"){const bw=50+110*(.5+.5*Math.sin(t*8));ctx.beginPath();if(ctx.roundRect)ctx.roundRect(cx-bw/2,barY,bw,6,3);else ctx.rect(cx-bw/2,barY,bw,6);const bg=ctx.createLinearGradient(cx-bw/2,0,cx+bw/2,0);bg.addColorStop(0,accent+"00");bg.addColorStop(.5,accent+Math.round((.38+.22*g)*255).toString(16).padStart(2,"0"));bg.addColorStop(1,accent+"00");ctx.fillStyle=bg;ctx.fill();}
+  else if(state!=="idle"){ctx.beginPath();if(ctx.roundRect)ctx.roundRect(48,barY,184,6,3);else ctx.rect(48,barY,184,6);ctx.fillStyle=accent+Math.round((.1+.1*g)*255).toString(16).padStart(2,"0");ctx.fill();}
+  ctx.beginPath();ctx.moveTo(108,318);ctx.lineTo(172,318);ctx.lineTo(176,340);ctx.lineTo(104,340);ctx.closePath();const ng=ctx.createLinearGradient(100,0,180,0);ng.addColorStop(0,"#767A88");ng.addColorStop(.28,"#AFB2BE");ng.addColorStop(.5,"#C7CAD4");ng.addColorStop(.72,"#A7AAB6");ng.addColorStop(1,"#767A88");ctx.fillStyle=ng;ctx.fill();
+  ctx.beginPath();ctx.ellipse(cx,320,34,9,0,0,Math.PI*2);const ncg=ctx.createLinearGradient(106,311,174,329);ncg.addColorStop(0,"#565A68");ncg.addColorStop(.5,"#868A98");ncg.addColorStop(1,"#565A68");ctx.fillStyle=ncg;ctx.fill();
+  [326,333,340].forEach(ry=>{ctx.beginPath();ctx.rect(106,ry,68,3);ctx.fillStyle="rgba(0,0,0,.28)";ctx.fill();ctx.beginPath();ctx.rect(106,ry,68,1.5);ctx.fillStyle="rgba(255,255,255,.13)";ctx.fill();});
+  ctx.restore();
+}
+function RobotFace({state="idle",accent="#3B82F6",width=200,height=248}){
+  const cvRef=useRef(null),animRef=useRef({t:0,blink:false,blinkAcc:0,nextBlink:2200+Math.random()*1800,px:0,py:0,glow:.5}),stRef=useRef(state),acRef=useRef(accent);
+  useEffect(()=>{stRef.current=state;},[state]);useEffect(()=>{acRef.current=accent;},[accent]);
+  useEffect(()=>{const cv=cvRef.current;if(!cv)return;const ctx=cv.getContext("2d");let last=0,raf;const loop=(now)=>{const dt=Math.min(now-last,50);last=now;const a=animRef.current;a.t+=dt*.001;a.glow=.5+.5*Math.sin(a.t*2.2);a.blinkAcc+=dt;if(!a.blink&&a.blinkAcc>a.nextBlink){a.blink=true;a.blinkAcc=0;a.nextBlink=2400+Math.random()*2200;setTimeout(()=>{animRef.current.blink=false;},140);}const s=stRef.current;if(s==="thinking"||s==="routing"){a.px=Math.sin(a.t*2.8)*7;a.py=Math.sin(a.t*1.4)*2.5;}else{a.px+=(Math.sin(a.t*.4)*3-a.px)*.015;a.py+=(Math.cos(a.t*.3)*2-a.py)*.015;}drawFace(ctx,cv.width,cv.height,s,acRef.current,a);raf=requestAnimationFrame(loop);};raf=requestAnimationFrame(loop);return()=>cancelAnimationFrame(raf);},[]);
+  return <canvas ref={cvRef} width={width} height={height} style={{display:"block"}}/>;
+}
+
+// ─── ONBOARDING QUESTIONS ────────────────────────────────────────────────────
+const ONBOARD_Q=[
+  {key:"name",q:"Hey! Ich bin dein Second Brain. 🧠\n\nBevor wir starten – wie heißt du?",ph:"Dein Name…",chips:[]},
+  {key:"job",q:"Schön dich kennenzulernen{name}! Was machst du beruflich?",ph:"z.B. Selbstständig, E-Commerce, Student…",chips:["Selbstständig","Angestellt","Student","E-Commerce"]},
+  {key:"goals",q:"Verstehe. Woran arbeitest du gerade am meisten – was ist dein größtes Ziel?",ph:"z.B. Business aufbauen, mehr verdienen…",chips:["Business aufbauen","Mehr verdienen","Fitness","Investieren lernen"]},
+  {key:"focus",q:"Wobei soll ich dich am häufigsten unterstützen?",ph:"z.B. Ideen, Finanzen, Produktivität…",chips:["Business & Ideen","Finanzen","Fitness","Produktivität","Alles"]},
+  {key:"style",q:"Wie magst du meine Antworten?",ph:"z.B. kurz und direkt, ausführlich…",chips:["Kurz & direkt","Ausführlich","Mit Beispielen","Motivierend"]},
+  {key:"context",q:"Letzte Frage: Gibt es etwas Wichtiges, das ich über dich wissen sollte?",ph:"z.B. wenig Zeit, 2 Kinder, Anfänger…",chips:["Wenig Zeit","Bin Anfänger","Schon erfahren","Überspringen"]},
+];
+
+// ─── AGENTS ──────────────────────────────────────────────────────────────────
+const AGENTS=[
+  {id:"oracle",name:"Oracle",role:"Persönlicher Assistent",emoji:"◉",accent:C.blue,kw:"alltag planung entscheidung rat persönlich geschenk tagesplanung kalender erinnerung",
+    gp:(p)=>`Du bist ${p.name?p.name+"s":"des Nutzers"} klügster persönlicher Assistent – das zentrale Gehirn.${ctx(p)}
+Direkt, ehrlich, ohne Schönrederei. Hilf bei allem: Planung, Entscheidungen, Shopping, Geschenke, Kalender.
+Wenn jemand Kalender, Termin, Erinnerung oder Geburtstag erwähnt: Biete proaktiv an, das zu organisieren.
+${learn(p)} Bei YouTube-Links: Analysiere ausführlich. Auf Deutsch.`},
+  {id:"market",name:"Markt Analyst",role:"Trading & Märkte",emoji:"◭",accent:C.green,kw:"aktien trading börse dax nasdaq markt investition kurs earnings analyse",
+    gp:(p)=>`Weltklasse-Marktanalytiker. Denkst wie Ray Dalio, Stanley Druckenmiller, Jim Simons.${ctx(p)}
+Suche aktuelle Marktdaten, News, Earnings. Erkläre wie Ereignisse Kurse beeinflussen. Allgemeine Marktbildung – keine Anlageberatung. ${learn(p)} Auf Deutsch.`},
+  {id:"investor",name:"Investor",role:"Finanzen & Vermögen",emoji:"◆",accent:"#10D9A0",kw:"geld finanzen investieren etf sparplan passives einkommen vermögen budget",
+    gp:(p)=>`Denkst wie Buffett, Munger, Dalio.${ctx(p)} Brutale Ehrlichkeit. "Rule 1: Never lose money." Allgemeine Finanzbildung. ${learn(p)} Auf Deutsch.`},
+  {id:"builder",name:"Builder",role:"Business & Skalierung",emoji:"◈",accent:C.orange,kw:"business startup marketing kunden selbstständig skalieren angebot vertrieb onlineshop shop",
+    gp:(p)=>`Denkst wie Bezos und Hormozi.${ctx(p)}
+Day-1. Kundenbesessenheit. Zahlen, konkrete Schritte. Bei Shop-/Business-Ideen: Konzept, Zielgruppe, erste Schritte. ${learn(p)} Auf Deutsch.`},
+  {id:"innovator",name:"Innovator",role:"Ideen & Innovation",emoji:"✦",accent:"#FF7A45",kw:"ideen innovation kreativ konzept nische disruption brainstorming erfinden",
+    gp:(p)=>`Denkst wie Musk, Thiel, Jobs.${ctx(p)} First Principles. 10x-Denken. ${learn(p)} Auf Deutsch.`},
+  {id:"performer",name:"Performer",role:"Fitness & Mindset",emoji:"▲",accent:C.red,kw:"fitness sport training gym ernährung gesundheit energie mindset schlaf",
+    gp:(p)=>`Denkst wie Goggins und Huberman.${ctx(p)} Keine Ausreden. Evidenzbasiert. Konkrete Protokolle. ${learn(p)} Auf Deutsch.`},
+  {id:"philosopher",name:"Strategie",role:"Ziele & Lebensdesign",emoji:"∞",accent:C.purple,kw:"ziele strategie gewohnheiten produktivität lebensplanung wachstum prioritäten",
+    gp:(p)=>`Denkst wie Naval Ravikant und Marcus Aurelius.${ctx(p)} Maximale Verdichtung. ${learn(p)} Auf Deutsch.`},
+  {id:"techmind",name:"TechMind",role:"KI & Automation",emoji:"⬡",accent:C.cyan,kw:"ki ai automatisierung tools claude chatgpt make zapier n8n whatsapp software automation",
+    gp:(p)=>`KI- und Automatisierungsexperte.${ctx(p)} Erkläre KI-Tools, Automationen (Make.com, n8n, Zapier), WhatsApp Business API. Praxisnah. ${learn(p)} Auf Deutsch.`},
+  {id:"advisor",name:"Advisor",role:"Shopping & Käufe",emoji:"◐",accent:C.gold,kw:"kaufen shopping auto geschenk empfehlung vergleich preis entscheidung produkt",
+    gp:(p)=>`Unparteiischer Berater ohne Interessenkonflikt.${ctx(p)} Ehrlich, Pros/Cons, eine konkrete Empfehlung. Suche aktuelle Preise. ${learn(p)} Auf Deutsch.`},
+];
+// helpers for profile injection
+function ctx(p){let s="";if(p.name)s+=` Name: ${p.name}.`;if(p.job)s+=` Beruf: ${p.job}.`;if(p.goals)s+=` Ziel: ${p.goals}.`;if(p.focus)s+=` Fokus: ${p.focus}.`;if(p.style)s+=` Antwortstil: ${p.style}.`;if(p.context)s+=` Kontext: ${p.context}.`;if(p.learned)s+=` Gelernt: ${p.learned}.`;return s;}
+function learn(p){return"Wenn du im Gespräch etwas Neues und Dauerhaftes über den Nutzer erfährst (Vorlieben, Situation, Ziele), erwähne es am Ende kurz mit dem Marker [MERKEN: ...].";}
+
+function isYT(t){return/(?:youtube\.com\/watch|youtu\.be\/|youtube\.com\/shorts\/)/.test(t);}
+function extractLearned(text){const m=text.match(/\[MERKEN:\s*([^\]]+)\]/i);return m?m[1].trim():null;}
+function stripLearned(text){return text.replace(/\[MERKEN:[^\]]*\]/gi,"").trim();}
+
+// Routing: keep simple keyword fallback if API fails, so chat ALWAYS proceeds.
+function keywordRoute(q,agents){
+  const t=q.toLowerCase();let best=agents[0],score=0;
+  agents.forEach(a=>{const s=(a.kw||"").split(" ").filter(k=>k&&t.includes(k)).length;if(s>score){score=s;best=a;}});
+  return {primary:best.id,isNew:false,newAgent:null};
+}
+async function routeQuery(q,agents){
+  const list=agents.map(a=>`"${a.id}": ${a.name} [${a.kw}]`).join(' | ');
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:`Ordne diese Anfrage dem besten Agenten zu. Antworte NUR mit JSON.\nAgenten: ${list}\nFormat: {"primary":"agent_id"}\nAnfrage: "${q}"`}]})});
+    let d;try{d=await r.json();}catch{return keywordRoute(q,agents);}
+    if(!d||d.error)return keywordRoute(q,agents);
+    let txt="";
+    if(Array.isArray(d.content))txt=d.content.filter(b=>b&&b.type==="text").map(b=>b.text).join("");
+    else if(typeof d.content==="string")txt=d.content;
+    txt=(txt||"").replace(/```json|```/g,"").trim();
+    const match=txt.match(/\{[^}]*\}/);
+    if(match){try{const p=JSON.parse(match[0]);if(p&&p.primary&&agents.some(a=>a.id===p.primary))return p;}catch{}}
+    return keywordRoute(q,agents);
+  }catch{return keywordRoute(q,agents);}
+}
+// Built-in fallback so the user ALWAYS gets a useful answer, even if the API proxy fails.
+function fallbackReply(agentId,q){
+  return "⚠️ Verbindungsfehler – bitte nochmal senden.";
+}
+async function callAPI(sys,messages,agentId){
+  const clean=messages.filter(m=>m.role==="user"||m.role==="assistant");
+  // Kein separater system-Parameter – in messages einbetten
+  const apiMsgs=sys&&sys.trim()
+    ?[{role:"user",content:`Anweisung für dieses Gespräch:\n${sys.substring(0,700)}`},{role:"assistant",content:"Verstanden. Ich folge diesen Anweisungen."},...clean]
+    :clean;
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:apiMsgs})
+    });
+    const d=await r.json();
+    const txt=(d.content||[]).filter(b=>b?.type==="text"&&b.text).map(b=>b.text).join("\n").trim();
+    if(txt)return txt;
+    if(d.error)return `⚠️ ${d.error.message||"Fehler"} – bitte nochmal senden.`;
+    return "⚠️ Keine Antwort – bitte nochmal senden.";
+  }catch{
+    return "⚠️ Verbindungsfehler – bitte nochmal senden.";
+  }
+}
+
+export default function Brain(){
+  const [agents,setAgents]=useState(AGENTS);
+  const [view,setView]=useState("dash");
+  const [activeId,setActiveId]=useState(null);
+  const [convos,setConvos]=useState({});
+  const [rState,setRState]=useState(null);
+  const [searchVal,setSearchVal]=useState("");
+  const [chatVal,setChatVal]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [profile,setProfile]=useState({name:"",job:"",goals:"",focus:"",style:"",context:"",learned:""});
+  const [showProf,setShowProf]=useState(false);
+  const [profDraft,setProfDraft]=useState({});
+  const [sidebar,setSidebar]=useState(true);
+  const [briefing,setBriefing]=useState(null);
+  const [briefLoad,setBriefLoad]=useState(false);
+  const [checkIn,setCheckIn]=useState(null);
+  const [status,setStatus]=useState("System bereit");
+  const [boot,setBoot]=useState(true);
+  const [provider,setProvider]=useState("claude");
+  const [showProvider,setShowProvider]=useState(false);
+  // onboarding
+  const [onboard,setOnboard]=useState(false);
+  const [obStep,setObStep]=useState(0);
+  const [obVal,setObVal]=useState("");
+  const [obData,setObData]=useState({});
+  const [learnToast,setLearnToast]=useState(null);
+  const endRef=useRef(null),chatRef=useRef(null),inputRef=useRef(null),obRef=useRef(null);
+
+  const activeAgent=agents.find(a=>a.id===activeId);
+  const msgs=convos[activeId]||[];
+
+  useEffect(()=>{const t=setTimeout(()=>setBoot(false),1500);return()=>clearTimeout(t);},[]);
+  useEffect(()=>{endRef.current?.scrollIntoView({behavior:"smooth"});},[msgs,loading]);
+  useEffect(()=>{if(view==="dash"&&!boot&&!onboard)setTimeout(()=>inputRef.current?.focus(),350);},[view,boot,onboard]);
+  useEffect(()=>{if(onboard)setTimeout(()=>obRef.current?.focus(),350);},[onboard,obStep]);
+
+  // Load profile + decide onboarding (storage is optional - never block the app)
+  useEffect(()=>{(async()=>{
+    let saved=null;
+    try{
+      if(window.storage){const m=await window.storage.get("sb_profile").catch(()=>null);if(m)saved=JSON.parse(m.value);}
+    }catch{}
+    if(saved&&saved.name){setProfile(saved);}
+    else{setTimeout(()=>setOnboard(true),1700);}
+    try{
+      if(window.storage){
+        let data={ideas:[],lastVisit:Date.now()};
+        const m=await window.storage.get("sb_mem").catch(()=>null);if(m)data=JSON.parse(m.value);
+        const hrs=(Date.now()-(data.lastVisit||0))/3600000;
+        if(hrs>0.5&&data.ideas?.length>0){const idea=data.ideas[0],n=(saved?.name)||data.profileName||"";setCheckIn({msg:`Hey${n?" "+n.split(" ")[0]:""} 👋 Letztes Mal hast du über etwas nachgedacht:\n\n„${idea.text.substring(0,90)}…"\n\nVerfolgst du das noch?`,idea});}
+        data.lastVisit=Date.now();await window.storage.set("sb_mem",JSON.stringify(data)).catch(()=>{});
+      }
+    }catch{}
+  })();},[]);
+
+  const saveProfile=async(p)=>{try{if(window.storage)await window.storage.set("sb_profile",JSON.stringify(p)).catch(()=>{});}catch{}};
+
+  // Onboarding submit
+  const obSubmit=async(val)=>{
+    const v=(val||obVal).trim();if(!v)return;
+    const cur=ONBOARD_Q[obStep];
+    const nd={...obData,[cur.key]:v==="Überspringen"?"":v};
+    setObData(nd);setObVal("");
+    if(obStep<ONBOARD_Q.length-1){setObStep(s=>s+1);}
+    else{const np={...profile,...nd};setProfile(np);await saveProfile(np);setOnboard(false);setObStep(0);}
+  };
+
+  const maybeSaveIdea=async(msg)=>{
+    const kw=["idee","konzept","vorhaben","plan","projekt","geschäft","business","startup","nische","shop"];
+    if(!kw.some(k=>msg.toLowerCase().includes(k)))return;
+    try{if(!window.storage)return;let data={ideas:[],lastVisit:Date.now(),profileName:profile.name};const m=await window.storage.get("sb_mem").catch(()=>null);if(m)data=JSON.parse(m.value);data.ideas=[{text:msg.substring(0,110),date:Date.now()},...(data.ideas||[])].slice(0,6);data.profileName=profile.name;await window.storage.set("sb_mem",JSON.stringify(data)).catch(()=>{});}catch{}
+  };
+
+  // continuous learning: persist new facts
+  const persistLearned=async(fact)=>{
+    const merged=profile.learned?`${profile.learned}; ${fact}`:fact;
+    const np={...profile,learned:merged.substring(0,400)};
+    setProfile(np);await saveProfile(np);
+    setLearnToast(fact);setTimeout(()=>setLearnToast(null),3500);
+  };
+
+  useEffect(()=>{if(view==="dash"&&!briefing&&!briefLoad&&!boot&&!onboard){setBriefLoad(true);
+    callAPI(`Du bist eine Wirtschafts-KI. Erstelle ein motivierendes Tages-Briefing mit genau 3 Punkten: 1) ein allgemeiner Markt-/Wirtschaftsgedanke 2) ein Business-Trend der gerade relevant ist 3) eine konkrete Opportunität oder Idee zum Nachdenken. Je 1-2 Sätze. Beginne jeden Punkt mit "▸ ". Auf Deutsch. Halte es allgemein und inspirierend.`,[{role:"user",content:"Erstelle mein Tages-Briefing."}]).then(r=>setBriefing({text:r,time:new Date()})).catch(()=>setBriefing({text:"▸ Willkommen zurück! Heute ist ein guter Tag, um an deinen Zielen zu arbeiten.",time:new Date()})).finally(()=>setBriefLoad(false));
+  }},[view,boot,onboard]);
+
+  const faceState=useMemo(()=>{if(rState?.phase==="thinking")return"thinking";if(rState?.phase==="routing")return"routing";if(loading||briefLoad)return"speaking";return"idle";},[rState,loading,briefLoad]);
+  const faceAccent=useMemo(()=>rState?.accent||activeAgent?.accent||C.blue,[rState,activeAgent]);
+
+  const processReply=async(raw)=>{const fact=extractLearned(raw);if(fact)await persistLearned(fact);return stripLearned(raw);};
+
+  const handleSearch=async(e)=>{
+    e.preventDefault();const q=searchVal.trim();if(!q||rState)return;
+    setRState({phase:"thinking"});setStatus("Analysiere Anfrage…");
+    try{
+      const res=await routeQuery(q,agents);let allA=agents,tid=res.primary;
+      if(res.isNew&&res.newAgent){const na=res.newAgent,nag={...na,gp:(p)=>`Experte für: ${na.kw}.${ctx(p)} Direkt, sachlich. ${learn(p)} Auf Deutsch.`};setAgents(prev=>[...prev,nag]);allA=[...agents,nag];tid=na.id;}
+      const tgt=allA.find(a=>a.id===tid)||allA[0];
+      setRState({phase:"routing",name:tgt.name,emoji:tgt.emoji,accent:tgt.accent});setStatus(`Weiterleitung → ${tgt.name}`);
+      await new Promise(r=>setTimeout(r,700));
+      setActiveId(tid);setView("chat");setSearchVal("");
+      const uMsg={role:"user",content:q},eMsg=isYT(q)?{role:"user",content:`${q}\nAnalysiere dieses YouTube-Video ausführlich.`}:uMsg;
+      setConvos(prev=>({...prev,[tid]:[uMsg]}));setRState(null);setLoading(true);setStatus("Verarbeitet…");
+      await maybeSaveIdea(q);
+      const raw=await callAPI(tgt.gp(profile),[eMsg],tgt.id);const reply=await processReply(raw);
+      setConvos(prev=>({...prev,[tid]:[uMsg,{role:"assistant",content:reply}]}));setStatus("System bereit");
+    }catch{setRState(null);setStatus("System bereit");}finally{setLoading(false);}
+  };
+
+  const sendChat=async(override)=>{
+    const q=(override||chatVal).trim();if(!q||loading||!activeAgent)return;
+    const uMsg={role:"user",content:q},newM=[...msgs,uMsg];
+    setConvos(prev=>({...prev,[activeId]:newM}));setChatVal("");if(chatRef.current)chatRef.current.style.height="auto";
+    setLoading(true);setStatus("Verarbeitet…");await maybeSaveIdea(q);
+    try{const eM=isYT(q)?[...newM.slice(0,-1),{role:"user",content:`${q}\nAnalysiere ausführlich.`}]:newM;const raw=await callAPI(activeAgent.gp(profile),eM,activeAgent.id);const r=await processReply(raw);setConvos(prev=>({...prev,[activeId]:[...newM,{role:"assistant",content:r}]}));setStatus("System bereit");}
+    catch{setConvos(prev=>({...prev,[activeId]:[...newM,{role:"assistant",content:"⚠️ Verbindungsfehler."}]}));}finally{setLoading(false);}
+  };
+
+  const onKey=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat();}};
+  const totalQ=Object.values(convos).reduce((s,m)=>s+m.filter(x=>x.role==="user").length,0);
+  const hasPro=!!(profile.name||profile.job);
+  const ac=activeAgent?.accent||C.blue;
+  const pv=PROVIDERS[provider];
+
+  // BOOT
+  if(boot){
+    return(
+      <div style={{height:"100vh",background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:FONT,gap:24,position:"relative",overflow:"hidden"}}>
+        <style>{`@keyframes bg1{0%,100%{opacity:.4;transform:scale(.98)}50%{opacity:1;transform:scale(1.02)}}@keyframes bb{from{width:0}to{width:100%}}@keyframes bf{from{opacity:0}to{opacity:1}}@keyframes gm{from{background-position:0 0}to{background-position:40px 40px}}`}</style>
+        <div style={{position:"absolute",inset:0,backgroundImage:`linear-gradient(${C.sep} 1px,transparent 1px),linear-gradient(90deg,${C.sep} 1px,transparent 1px)`,backgroundSize:"40px 40px",animation:"gm 3s linear infinite",opacity:.3}}/>
+        <div style={{animation:"bg1 1.6s ease-in-out infinite",filter:`drop-shadow(0 0 40px ${C.blue}55)`,zIndex:1}}><div style={{width:64,height:64,background:`linear-gradient(135deg,${C.violet},${C.blue},${C.cyan})`,borderRadius:18,display:"flex",alignItems:"center",justifyContent:"center",fontSize:32}}>🧠</div></div>
+        <div style={{textAlign:"center",zIndex:1,animation:"bf .6s ease"}}><div style={{fontSize:22,fontWeight:800,letterSpacing:"3px",color:C.t1,marginBottom:6}}>SECOND BRAIN</div><div style={{fontSize:10,color:C.t3,letterSpacing:"4px",fontFamily:MONO}}>NEURAL OS · v3.5</div></div>
+        <div style={{width:200,height:2,background:C.t4,borderRadius:2,overflow:"hidden",zIndex:1}}><div style={{height:"100%",background:`linear-gradient(90deg,${C.violet},${C.cyan})`,animation:"bb 1.4s ease-out forwards"}}/></div>
+        <div style={{fontSize:9,color:C.t3,letterSpacing:"2px",fontFamily:MONO,zIndex:1}}>INITIALISIERE {AGENTS.length} AGENTEN…</div>
+      </div>
+    );
+  }
+
+  return(
+    <div style={{display:"flex",height:"100vh",background:C.bg,fontFamily:FONT,overflow:"hidden",color:C.t1,position:"relative"}}>
+      <style>{`
+        @keyframes fu{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+        @keyframes si{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+        @keyframes msgIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+        @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+        @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+        @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+        @keyframes slideUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+        @keyframes ambient{0%,100%{opacity:.5}50%{opacity:.9}}
+        @keyframes borderFlow{0%,100%{opacity:.3}50%{opacity:.7}}
+        @keyframes qIn{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
+        @keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+        *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+        button,input,textarea{font-family:${FONT}}
+        ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:${C.sep};border-radius:3px}::-webkit-scrollbar-track{background:transparent}
+        ::selection{background:${C.blue}44}
+        .hov{transition:all .18s ease}.hov:hover{opacity:.72}
+        .card{transition:all .25s cubic-bezier(.2,.8,.2,1)}.card:hover{background:rgba(255,255,255,.06)!important;border-color:rgba(255,255,255,.16)!important;transform:translateY(-3px) scale(1.01)!important;box-shadow:0 12px 40px rgba(0,0,0,.5)!important}
+        .agbtn{transition:all .15s ease}.agbtn:hover{background:rgba(255,255,255,.05)!important}
+        .sb{transition:all .15s ease}.sb:hover:not(:disabled){filter:brightness(1.25);transform:scale(1.1)}
+        .obchip{transition:all .15s ease}.obchip:hover{background:${C.blue}1E!important;border-color:${C.blue}50!important;transform:translateY(-1px)}
+        textarea::placeholder,input::placeholder{color:${C.t3}}
+      `}</style>
+
+      <div style={{position:"absolute",top:"-10%",left:"30%",width:500,height:500,background:`radial-gradient(circle,${faceAccent}0E,transparent 70%)`,pointerEvents:"none",zIndex:0,animation:"ambient 5s ease-in-out infinite",transition:"background 1s ease"}}/>
+
+      {/* Learning toast */}
+      {learnToast&&(
+        <div style={{position:"fixed",top:16,right:16,zIndex:300,background:C.s1,backdropFilter:"blur(30px)",WebkitBackdropFilter:"blur(30px)",border:`1px solid ${C.green}40`,borderRadius:12,padding:"11px 15px",maxWidth:280,boxShadow:"0 12px 40px rgba(0,0,0,.5)",animation:"toastIn .3s ease",display:"flex",gap:9,alignItems:"flex-start"}}>
+          <span style={{fontSize:15}}>🧠</span>
+          <div><div style={{fontSize:9,fontWeight:700,color:C.green,letterSpacing:".08em",marginBottom:2,fontFamily:MONO}}>GELERNT</div><div style={{fontSize:11.5,color:C.t2,lineHeight:1.5}}>{learnToast}</div></div>
+        </div>
+      )}
+
+      {/* ══ SIDEBAR ══ */}
+      <div style={{width:sidebar?220:58,minWidth:sidebar?220:58,background:C.s1,backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)",borderRight:`1px solid ${C.sep}`,display:"flex",flexDirection:"column",transition:"width .24s cubic-bezier(.2,.8,.2,1),min-width .24s cubic-bezier(.2,.8,.2,1)",overflow:"hidden",flexShrink:0,zIndex:2}}>
+        <div style={{padding:"13px 11px 12px",borderBottom:`1px solid ${C.sep}`,display:"flex",alignItems:"center",gap:9}}>
+          <div onClick={()=>{setView("dash");setActiveId(null);}} style={{width:34,height:34,minWidth:34,background:`linear-gradient(135deg,${C.violet},${C.blue},${C.cyan})`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,cursor:"pointer",flexShrink:0,boxShadow:`0 2px 16px ${C.blue}40`}}>🧠</div>
+          {sidebar&&<div><div style={{fontSize:11,fontWeight:800,color:C.t1,letterSpacing:".09em"}}>SECOND BRAIN</div><div style={{fontSize:8.5,color:C.t3,marginTop:1,fontFamily:MONO,letterSpacing:".05em"}}>NEURAL OS · {agents.length} AGENTS</div></div>}
+        </div>
+        {sidebar&&(
+          <button className="hov" onClick={()=>{setProfDraft({...profile});setShowProf(true);}} style={{margin:"8px 8px 4px",padding:"8px 9px",background:hasPro?`linear-gradient(135deg,${C.blue}14,${C.violet}10)`:C.t4,border:`1px solid ${hasPro?C.blue+"30":C.soft}`,borderRadius:10,cursor:"pointer",display:"flex",alignItems:"center",gap:8,textAlign:"left"}}>
+            <div style={{width:26,height:26,borderRadius:"50%",background:hasPro?`linear-gradient(135deg,${C.violet},${C.cyan})`:C.s2,border:`1px solid ${C.sep}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0,color:"#fff"}}>{profile.name?profile.name[0].toUpperCase():"+"}</div>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:600,color:hasPro?C.t1:C.t3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{profile.name||"Profil aktivieren"}</div><div style={{fontSize:9,color:C.t3}}>{profile.job||"Personalisierung"}</div></div>
+          </button>
+        )}
+        {/* Provider switcher */}
+        {sidebar&&(
+          <div style={{margin:"2px 8px 4px"}}>
+            <button className="hov" onClick={()=>setShowProvider(true)} style={{width:"100%",padding:"7px 9px",background:C.t4,border:`1px solid ${pv.color}28`,borderRadius:9,cursor:"pointer",display:"flex",alignItems:"center",gap:8,textAlign:"left"}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:pv.color,boxShadow:`0 0 6px ${pv.color}`,flexShrink:0}}/>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:10.5,fontWeight:600,color:C.t1}}>KI: {pv.name}</div><div style={{fontSize:8.5,color:C.t3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{pv.sub}</div></div>
+              <span style={{fontSize:10,color:C.t3}}>⇄</span>
+            </button>
+          </div>
+        )}
+        <div style={{flex:1,padding:"4px 5px",overflowY:"auto"}}>
+          {sidebar&&<div style={{fontSize:8,fontWeight:700,color:C.t3,letterSpacing:".16em",padding:"8px 6px 6px",fontFamily:MONO}}>NEURAL AGENTS</div>}
+          {agents.map(ag=>{const act=activeId===ag.id&&view==="chat";const n=(convos[ag.id]||[]).filter(m=>m.role==="user").length;return(
+            <button key={ag.id} className="agbtn" onClick={()=>{setActiveId(ag.id);setView("chat");}} style={{width:"100%",padding:sidebar?"7px 8px":"7px 0",marginBottom:1,background:act?`${ag.accent}12`:"transparent",border:`1px solid ${act?ag.accent+"30":"transparent"}`,borderRadius:9,cursor:"pointer",display:"flex",alignItems:"center",gap:8,justifyContent:sidebar?"flex-start":"center",textAlign:"left"}}>
+              <div style={{width:28,height:28,minWidth:28,borderRadius:8,background:act?`${ag.accent}22`:C.t4,border:`1px solid ${act?ag.accent+"40":"transparent"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0,color:act?ag.accent:C.t2}}>{ag.emoji}</div>
+              {sidebar&&<><div style={{flex:1,minWidth:0}}><div style={{fontSize:11.5,fontWeight:500,color:act?ag.accent:C.t2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ag.name}</div><div style={{fontSize:9,color:C.t3}}>{ag.role}</div></div>{n>0&&<div style={{padding:"1px 5px",background:`${ag.accent}1E`,color:ag.accent,borderRadius:8,fontSize:8.5,fontWeight:700}}>{n}</div>}</>}
+            </button>
+          );})}
+        </div>
+        <div style={{padding:"5px",borderTop:`1px solid ${C.sep}`}}>
+          <button className="hov" onClick={()=>setSidebar(s=>!s)} style={{width:"100%",padding:"6px",background:"transparent",border:`1px solid ${C.soft}`,borderRadius:8,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:sidebar?"flex-start":"center",gap:6,color:C.t3,fontSize:9.5}}>
+            <span>{sidebar?"◀":"▶"}</span>{sidebar&&"Einklappen"}
+          </button>
+        </div>
+      </div>
+
+      {/* ══ MAIN ══ */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",zIndex:1}}>
+        {view==="dash"&&(
+          <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",alignItems:"center",padding:"18px 16px 24px"}}>
+            {checkIn&&(
+              <div style={{width:"100%",maxWidth:520,marginBottom:14,animation:"slideUp .5s cubic-bezier(.2,.8,.2,1)"}}>
+                <div style={{background:`linear-gradient(135deg,${C.violet}1A,${C.blue}10)`,border:`1px solid ${C.violet}38`,borderRadius:16,padding:"15px 17px",position:"relative",overflow:"hidden"}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:"1.5px",background:`linear-gradient(90deg,${C.violet},${C.cyan},transparent)`,animation:"borderFlow 3s ease infinite"}}/>
+                  <div style={{display:"flex",gap:11,alignItems:"flex-start"}}>
+                    <div style={{width:38,height:38,borderRadius:11,background:`linear-gradient(135deg,${C.violet}30,${C.blue}20)`,border:`1px solid ${C.violet}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🧠</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:9,fontWeight:700,color:C.violet,letterSpacing:".1em",marginBottom:5,fontFamily:MONO}}>PROAKTIVER CHECK-IN</div>
+                      <div style={{fontSize:13,color:C.t1,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{checkIn.msg}</div>
+                      <div style={{display:"flex",gap:7,marginTop:11}}>
+                        <button className="hov" onClick={()=>{setCheckIn(null);setActiveId("innovator");setView("chat");setTimeout(()=>sendChat("Lass uns weiter an dieser Idee arbeiten: "+checkIn.idea.text),200);}} style={{padding:"7px 15px",background:`linear-gradient(135deg,${C.blue},${C.violet})`,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontSize:11.5,fontWeight:600}}>Weiterentwickeln →</button>
+                        <button className="hov" onClick={()=>setCheckIn(null)} style={{padding:"7px 13px",background:"transparent",border:`1px solid ${C.soft}`,borderRadius:9,color:C.t3,cursor:"pointer",fontSize:11.5}}>Später</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{textAlign:"center",marginBottom:10,animation:"fu .4s ease"}}>
+              <h1 style={{fontSize:21,fontWeight:800,margin:0,letterSpacing:"-.3px",background:`linear-gradient(135deg,${C.t1},${C.t2})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>{profile.name?`Willkommen, ${profile.name.split(" ")[0]}`:"Second Brain"}</h1>
+              <div style={{fontSize:10,color:C.t3,marginTop:4,display:"flex",alignItems:"center",gap:6,justifyContent:"center",fontFamily:MONO,letterSpacing:".05em"}}><div style={{width:5,height:5,borderRadius:"50%",background:briefLoad||loading||rState?C.orange:C.green,boxShadow:`0 0 6px ${briefLoad||loading||rState?C.orange:C.green}`}}/><span style={{animation:"pulse 2s ease-in-out infinite"}}>{status.toUpperCase()}</span></div>
+            </div>
+
+            <div style={{width:"100%",maxWidth:480,marginBottom:14,animation:"fu .45s ease",borderRadius:20,overflow:"hidden",border:`1px solid ${C.sep}`,background:"rgba(6,7,12,.7)",padding:6,position:"relative"}}>
+              <div style={{position:"absolute",top:0,left:0,right:0,height:"1px",background:`linear-gradient(90deg,transparent,${faceAccent}50,transparent)`,animation:"borderFlow 4s ease infinite"}}/>
+              <BrainViz agents={agents} activeId={activeId} faceState={faceState}/>
+            </div>
+
+            <form onSubmit={handleSearch} style={{width:"100%",maxWidth:480,marginBottom:14,animation:"fu .5s ease"}}>
+              <div style={{display:"flex",alignItems:"center",gap:11,background:C.s1,backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)",border:`1.5px solid ${searchVal?faceAccent+"60":C.sep}`,borderRadius:15,padding:"14px 16px",boxShadow:searchVal?`0 0 0 4px ${faceAccent}12,0 12px 40px rgba(0,0,0,.5)`:"0 6px 28px rgba(0,0,0,.35)",transition:"all .25s cubic-bezier(.2,.8,.2,1)"}}>
+                {rState?(
+                  <div style={{display:"flex",alignItems:"center",gap:11,flex:1}}>{rState.phase==="thinking"?<><div style={{display:"flex",gap:3}}>{[0,1,2].map(i=><div key={i} style={{width:5,height:5,borderRadius:"50%",background:C.blue,animation:`pulse 1s ease ${i*.15}s infinite`}}/>)}</div><span style={{fontSize:13.5,color:C.t2,fontFamily:MONO}}>Neural routing…</span></>:<><div style={{width:28,height:28,borderRadius:8,background:`${rState.accent}22`,border:`1px solid ${rState.accent}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:rState.accent}}>{rState.emoji}</div><div><div style={{fontSize:9,color:C.t3,fontFamily:MONO,letterSpacing:".05em"}}>ROUTING →</div><div style={{fontSize:14,fontWeight:600}}>{rState.name}</div></div></>}</div>
+                ):(<><span style={{color:faceAccent,fontSize:16,flexShrink:0}}>⌕</span><input ref={inputRef} value={searchVal} onChange={e=>setSearchVal(e.target.value)} placeholder="Frag dein Brain – alles, jederzeit…" style={{flex:1,background:"transparent",border:"none",outline:"none",fontSize:14.5,color:C.t1,lineHeight:1.4}}/>{searchVal&&<div style={{fontSize:9.5,color:C.t3,background:C.t4,padding:"3px 8px",borderRadius:6,flexShrink:0,fontFamily:MONO}}>↵ ENTER</div>}</>)}
+              </div>
+            </form>
+
+            <div style={{width:"100%",maxWidth:480,marginBottom:14,animation:"fu .55s ease"}}>
+              <div style={{background:`linear-gradient(135deg,${C.green}0A,transparent)`,border:`1px solid ${C.green}1E`,borderRadius:13,padding:"13px 15px",position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",top:0,left:0,right:0,height:"1.5px",background:`linear-gradient(90deg,${C.green}80,transparent)`}}/>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:12}}>📡</span><span style={{fontSize:9.5,fontWeight:700,color:C.green,letterSpacing:".1em",fontFamily:MONO}}>LIVE MARKT-BRIEFING</span></div><div style={{display:"flex",gap:6,alignItems:"center"}}>{briefing&&<span style={{fontSize:8.5,color:C.t3,fontFamily:MONO}}>{briefing.time.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})}</span>}<button className="hov" onClick={()=>{setBriefing(null);setBriefLoad(false);}} style={{fontSize:10,color:C.t3,background:"transparent",border:"none",cursor:"pointer"}}>↺</button></div></div>
+                {briefLoad?<div style={{display:"flex",alignItems:"center",gap:8,padding:"2px 0"}}><div style={{width:12,height:12,border:`1.5px solid ${C.green}`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin .8s linear infinite"}}/><span style={{fontSize:11.5,color:C.t3}}>Scanne globale Märkte…</span></div>:briefing?<div style={{fontSize:12,color:C.t2,lineHeight:1.75,whiteSpace:"pre-wrap"}}>{briefing.text}</div>:<div style={{fontSize:11.5,color:C.t3}}>Lädt…</div>}
+              </div>
+            </div>
+
+            <div style={{width:"100%",maxWidth:480,animation:"fu .6s ease"}}>
+              <div style={{fontSize:9,fontWeight:700,color:C.t3,letterSpacing:".15em",marginBottom:11,fontFamily:MONO}}>ALLE AGENTEN</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:9}}>
+                {agents.map((ag,i)=>{const n=(convos[ag.id]||[]).filter(m=>m.role==="user").length;return(
+                  <button key={ag.id} className="card" onClick={()=>{setActiveId(ag.id);setView("chat");}} style={{background:"rgba(255,255,255,.035)",border:`1px solid ${C.sep}`,borderRadius:14,padding:"14px 12px",cursor:"pointer",textAlign:"left",animation:`fu ${.4+i*.04}s ease`,position:"relative",overflow:"hidden"}}>
+                    <div style={{position:"absolute",top:0,left:0,right:0,height:"2px",background:`linear-gradient(90deg,${ag.accent}70,transparent)`}}/>
+                    <div style={{width:36,height:36,borderRadius:10,background:`${ag.accent}18`,border:`1px solid ${ag.accent}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,marginBottom:9,color:ag.accent}}>{ag.emoji}</div>
+                    <div style={{fontSize:12.5,fontWeight:600,color:C.t1,marginBottom:2}}>{ag.name}</div>
+                    <div style={{fontSize:10,color:C.t2,lineHeight:1.4}}>{ag.role}</div>
+                    {n>0&&<div style={{position:"absolute",top:11,right:11,background:`${ag.accent}1E`,color:ag.accent,borderRadius:7,fontSize:8.5,fontWeight:700,padding:"2px 6px"}}>{n}</div>}
+                  </button>
+                );})}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {view==="chat"&&activeAgent&&(
+          <>
+            <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.sep}`,background:C.s1,backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <button className="hov" onClick={()=>setView("dash")} style={{background:C.t4,border:"none",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontSize:11,color:C.t2}}>← Brain</button>
+                <div style={{width:1,height:14,background:C.sep}}/>
+                <div style={{lineHeight:0,flexShrink:0}}><RobotFace state={faceState} accent={ac} width={50} height={62}/></div>
+                <div><div style={{fontSize:13.5,fontWeight:600,color:C.t1}}>{activeAgent.name}</div><div style={{display:"flex",alignItems:"center",gap:4,marginTop:1}}><div style={{width:4,height:4,borderRadius:"50%",background:loading?C.orange:C.green,boxShadow:`0 0 5px ${loading?C.orange:C.green}`}}/><span style={{fontSize:8.5,color:C.t3,fontFamily:MONO}}>{loading?status.toUpperCase():activeAgent.role}</span></div></div>
+              </div>
+              <button className="hov" onClick={()=>setConvos(p=>({...p,[activeId]:[]}))} style={{background:"transparent",border:`1px solid ${C.soft}`,borderRadius:8,padding:"5px 11px",cursor:"pointer",fontSize:10.5,color:C.t3}}>Leeren</button>
+            </div>
+
+            <div style={{flex:1,overflowY:"auto",padding:"14px 16px 6px",display:"flex",flexDirection:"column",gap:9}}>
+              {msgs.length===0?(
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",gap:12,animation:"si .3s ease"}}>
+                  <div style={{animation:"float 3.5s ease-in-out infinite",filter:`drop-shadow(0 8px 32px ${ac}30)`}}><RobotFace state="idle" accent={ac} width={140} height={174}/></div>
+                  <div style={{textAlign:"center"}}><div style={{fontSize:16,fontWeight:700,marginBottom:3}}>{activeAgent.name}</div><div style={{fontSize:12.5,color:C.t2}}>{activeAgent.role}</div></div>
+                </div>
+              ):(msgs.map((msg,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:msg.role==="user"?"flex-end":"flex-start",alignItems:"flex-end",gap:6,animation:"msgIn .22s ease"}}>
+                  {msg.role==="assistant"&&<div style={{lineHeight:0,flexShrink:0,marginBottom:2}}><RobotFace state="idle" accent={ac} width={26} height={32}/></div>}
+                  <div style={{maxWidth:"77%",padding:"10px 13px",borderRadius:msg.role==="user"?"15px 15px 4px 15px":"15px 15px 15px 4px",background:msg.role==="user"?`linear-gradient(135deg,${ac},${ac}CC)`:"rgba(255,255,255,.06)",border:msg.role==="user"?"none":`1px solid ${C.sep}`,color:msg.role==="user"?"#fff":C.t1,fontSize:14,lineHeight:1.65,whiteSpace:"pre-wrap",wordBreak:"break-word",boxShadow:msg.role==="user"?`0 4px 16px ${ac}30`:"none"}}>{isYT(msg.content)&&msg.role==="user"&&<div style={{fontSize:9,opacity:.6,marginBottom:2}}>🎥 YouTube</div>}{msg.content}</div>
+                </div>
+              )))}
+              {loading&&<div style={{display:"flex",alignItems:"flex-end",gap:6,animation:"msgIn .2s ease"}}><div style={{lineHeight:0,flexShrink:0}}><RobotFace state="speaking" accent={ac} width={26} height={32}/></div><div style={{padding:"11px 14px",background:"rgba(255,255,255,.06)",border:`1px solid ${C.sep}`,borderRadius:"15px 15px 15px 4px",display:"flex",gap:4}}>{[0,1,2].map(i=><div key={i} style={{width:5,height:5,borderRadius:"50%",background:ac,animation:`pulse 1.2s ease ${i*.17}s infinite`}}/>)}</div></div>}
+              <div ref={endRef}/>
+            </div>
+
+            <div style={{padding:"10px 16px 14px",borderTop:`1px solid ${C.sep}`,background:C.s1,backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)",flexShrink:0}}>
+              {isYT(chatVal)&&<div style={{marginBottom:5,padding:"4px 10px",background:`${C.red}14`,border:`1px solid ${C.red}28`,borderRadius:8,fontSize:10,color:C.red}}>🎥 YouTube erkannt – wird analysiert</div>}
+              <div style={{display:"flex",gap:7,alignItems:"flex-end",background:"rgba(255,255,255,.05)",border:`1.5px solid ${chatVal?ac+"50":C.sep}`,borderRadius:14,padding:"7px 7px 7px 13px",transition:"border-color .18s",boxShadow:chatVal?`0 0 0 3px ${ac}12`:"none"}}>
+                <textarea ref={chatRef} value={chatVal} onChange={e=>setChatVal(e.target.value)} onKeyDown={onKey} placeholder={`Nachricht an ${activeAgent.name}…`} rows={1} style={{flex:1,background:"transparent",border:"none",outline:"none",color:C.t1,fontSize:14,lineHeight:1.5,resize:"none",maxHeight:100,padding:"2px 0"}} onInput={e=>{e.target.style.height="auto";e.target.style.height=Math.min(e.target.scrollHeight,100)+"px";}}/>
+                <button className="sb" onClick={()=>sendChat()} disabled={!chatVal.trim()||loading} style={{width:30,height:30,borderRadius:9,border:"none",background:chatVal.trim()&&!loading?`linear-gradient(135deg,${ac},${ac}CC)`:"rgba(255,255,255,.08)",cursor:chatVal.trim()&&!loading?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,color:"#fff",flexShrink:0,boxShadow:chatVal.trim()&&!loading?`0 2px 12px ${ac}40`:"none"}}>↑</button>
+              </div>
+              <div style={{fontSize:8.5,color:C.t3,marginTop:4,textAlign:"center",fontFamily:MONO,letterSpacing:".03em"}}>ENTER SENDEN · ICH LERNE DICH BEI JEDEM GESPRÄCH BESSER KENNEN</div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ══ ONBOARDING ══ */}
+      {onboard&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(6,7,10,.96)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",zIndex:250,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
+          {/* progress */}
+          <div style={{position:"absolute",top:30,left:0,right:0,display:"flex",justifyContent:"center",gap:6}}>
+            {ONBOARD_Q.map((_,i)=><div key={i} style={{width:i===obStep?22:8,height:4,borderRadius:2,background:i<=obStep?C.blue:C.t4,transition:"all .3s ease"}}/>)}
+          </div>
+          <div key={obStep} style={{width:"100%",maxWidth:440,animation:"qIn .4s cubic-bezier(.2,.8,.2,1)",display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
+            <div style={{animation:"float 4s ease-in-out infinite",filter:`drop-shadow(0 8px 32px ${C.blue}35)`}}><RobotFace state="speaking" accent={C.blue} width={120} height={148}/></div>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:9,fontWeight:700,color:C.blue,letterSpacing:".15em",marginBottom:10,fontFamily:MONO}}>KENNENLERNEN · {obStep+1}/{ONBOARD_Q.length}</div>
+              <div style={{fontSize:17,fontWeight:600,color:C.t1,lineHeight:1.55,whiteSpace:"pre-wrap"}}>{ONBOARD_Q[obStep].q.replace("{name}",obData.name?" "+obData.name.split(" ")[0]:"")}</div>
+            </div>
+            {ONBOARD_Q[obStep].chips.length>0&&(
+              <div style={{display:"flex",flexWrap:"wrap",gap:7,justifyContent:"center"}}>
+                {ONBOARD_Q[obStep].chips.map(c=>(
+                  <button key={c} className="obchip" onClick={()=>obSubmit(c)} style={{padding:"8px 14px",background:C.t4,border:`1px solid ${C.sep}`,borderRadius:20,color:C.t2,cursor:"pointer",fontSize:12.5}}>{c}</button>
+                ))}
+              </div>
+            )}
+            <div style={{width:"100%",display:"flex",gap:8,alignItems:"center",background:"rgba(255,255,255,.05)",border:`1.5px solid ${obVal?C.blue+"50":C.sep}`,borderRadius:14,padding:"8px 8px 8px 15px",transition:"border-color .18s"}}>
+              <input ref={obRef} value={obVal} onChange={e=>setObVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();obSubmit();}}} placeholder={ONBOARD_Q[obStep].ph} style={{flex:1,background:"transparent",border:"none",outline:"none",color:C.t1,fontSize:14.5,lineHeight:1.4}}/>
+              <button className="sb" onClick={()=>obSubmit()} disabled={!obVal.trim()} style={{width:34,height:34,borderRadius:10,border:"none",background:obVal.trim()?`linear-gradient(135deg,${C.blue},${C.violet})`:"rgba(255,255,255,.08)",cursor:obVal.trim()?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:"#fff",flexShrink:0}}>→</button>
+            </div>
+            <button className="hov" onClick={async()=>{const np={...profile,...obData};setProfile(np);await saveProfile(np);setOnboard(false);setObStep(0);}} style={{background:"transparent",border:"none",color:C.t3,cursor:"pointer",fontSize:11,fontFamily:MONO,letterSpacing:".05em"}}>ÜBERSPRINGEN</button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ PROVIDER MODAL ══ */}
+      {showProvider&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setShowProvider(false);}}>
+          <div style={{background:C.s1,backdropFilter:"blur(40px)",WebkitBackdropFilter:"blur(40px)",border:`1px solid ${C.sep}`,borderRadius:22,padding:"24px",width:"100%",maxWidth:400,boxShadow:"0 32px 90px rgba(0,0,0,.7)",animation:"si .25s cubic-bezier(.2,.8,.2,1)",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:"2px",background:`linear-gradient(90deg,${pv.color},transparent)`}}/>
+            <div style={{marginBottom:18}}><div style={{fontSize:18,fontWeight:700,marginBottom:5}}>KI-Modell wählen</div><div style={{fontSize:12,color:C.t2,lineHeight:1.6}}>Wähle, welche KI deinen Agenten antreibt. Umstellung auf Gemini/ChatGPT funktioniert beim Eigenbetrieb mit deinem API-Schlüssel.</div></div>
+            {Object.entries(PROVIDERS).map(([id,p])=>(
+              <button key={id} className="hov" onClick={()=>{setProvider(id);setShowProvider(false);}} style={{width:"100%",marginBottom:8,padding:"13px 14px",background:provider===id?`${p.color}14`:C.t4,border:`1.5px solid ${provider===id?p.color+"50":C.sep}`,borderRadius:12,cursor:"pointer",display:"flex",alignItems:"center",gap:11,textAlign:"left"}}>
+                <div style={{width:10,height:10,borderRadius:"50%",background:p.color,boxShadow:`0 0 8px ${p.color}`,flexShrink:0}}/>
+                <div style={{flex:1}}><div style={{fontSize:13.5,fontWeight:600,color:C.t1,display:"flex",alignItems:"center",gap:7}}>{p.name}{p.live&&<span style={{fontSize:8,fontWeight:700,color:C.green,background:`${C.green}1E`,padding:"2px 6px",borderRadius:5,fontFamily:MONO}}>LÄUFT HIER</span>}{!p.live&&<span style={{fontSize:8,fontWeight:700,color:C.t3,background:C.t4,padding:"2px 6px",borderRadius:5,fontFamily:MONO}}>EIGENER KEY</span>}</div><div style={{fontSize:10.5,color:C.t3,marginTop:2}}>{p.sub}</div></div>
+                {provider===id&&<span style={{color:p.color,fontSize:16}}>✓</span>}
+              </button>
+            ))}
+            <div style={{marginTop:14,padding:"11px 13px",background:`${C.blue}0C`,border:`1px solid ${C.blue}20`,borderRadius:10,fontSize:11,color:C.t2,lineHeight:1.6}}>
+              💡 <strong style={{color:C.t1}}>Tipp:</strong> Gemini hat ein kostenloses Tageskontingent. Beim Eigenbetrieb (Vercel/lokal) trägst du deinen Schlüssel ein und sparst Kosten.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ PROFILE MODAL ══ */}
+      {showProf&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setShowProf(false);}}>
+          <div style={{background:C.s1,backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)",border:`1px solid ${C.sep}`,borderRadius:22,padding:"26px",width:"100%",maxWidth:390,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 32px 90px rgba(0,0,0,.7)",animation:"si .25s cubic-bezier(.2,.8,.2,1)",position:"relative"}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:"2px",background:`linear-gradient(90deg,${C.violet},${C.cyan},transparent)`}}/>
+            <div style={{marginBottom:20}}><div style={{fontSize:19,fontWeight:700,marginBottom:5}}>Dein Profil</div><div style={{fontSize:12.5,color:C.t2,lineHeight:1.6}}>Alle Agenten nutzen diese Infos. Ich ergänze sie automatisch, wenn ich dich besser kennenlerne.</div></div>
+            {[{k:"name",l:"Name"},{k:"job",l:"Beruf / Tätigkeit"},{k:"goals",l:"Wichtigste Ziele"},{k:"focus",l:"Hauptfokus"},{k:"style",l:"Antwortstil"},{k:"context",l:"Kontext"}].map(f=>(
+              <div key={f.k} style={{marginBottom:12}}><label style={{display:"block",fontSize:9,fontWeight:700,color:C.t3,marginBottom:5,letterSpacing:".1em",fontFamily:MONO}}>{f.l.toUpperCase()}</label><input value={profDraft[f.k]||""} onChange={e=>setProfDraft(p=>({...p,[f.k]:e.target.value}))} style={{width:"100%",padding:"10px 13px",background:C.t4,border:`1px solid ${C.sep}`,borderRadius:10,color:C.t1,fontSize:13.5,outline:"none",transition:"border-color .15s"}} onFocus={e=>e.target.style.borderColor=C.blue+"60"} onBlur={e=>e.target.style.borderColor=C.sep}/></div>
+            ))}
+            {profile.learned&&(
+              <div style={{marginBottom:12}}><label style={{display:"block",fontSize:9,fontWeight:700,color:C.green,marginBottom:5,letterSpacing:".1em",fontFamily:MONO}}>🧠 AUTOMATISCH GELERNT</label><div style={{padding:"10px 13px",background:`${C.green}0A`,border:`1px solid ${C.green}20`,borderRadius:10,color:C.t2,fontSize:11.5,lineHeight:1.5}}>{profile.learned}</div></div>
+            )}
+            <div style={{display:"flex",gap:8,marginTop:20}}>
+              <button className="hov" onClick={()=>setShowProf(false)} style={{flex:1,padding:"11px",background:"transparent",border:`1px solid ${C.sep}`,borderRadius:11,color:C.t2,cursor:"pointer",fontSize:12.5}}>Abbrechen</button>
+              <button className="hov" onClick={async()=>{setProfile(profDraft);await saveProfile(profDraft);setShowProf(false);}} style={{flex:2,padding:"11px",background:`linear-gradient(135deg,${C.blue},${C.violet})`,border:"none",borderRadius:11,color:"#fff",cursor:"pointer",fontSize:12.5,fontWeight:600}}>Speichern</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
